@@ -9,6 +9,8 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+	"github.com/gen2brain/beeep"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os/exec"
@@ -19,15 +21,24 @@ import (
 	"time"
 )
 
-var username = "riot"
-var authToken string
-var appPort string
-var champs []Champion
-var selectedChampion Champion
+var (
+	username         = "riot"
+	authToken        string
+	appPort          string
+	champs           []Champion
+	selectedChampion Champion
+	stopChan         chan bool
+	runningLable     = widget.NewLabel("")
+)
 
-var stopChan chan bool
-
-var runningLable = widget.NewLabel("")
+var (
+	selectEntry   = widget.NewSelectEntry(nil)
+	confirmButton = widget.NewButton("Xác nhận", func() {})
+	startButton   = widget.NewButton("Bắt đầu", func() {})
+	stopButton    = widget.NewButton("Stop", func() {})
+	resultLabel   = widget.NewLabel("Chưa chọn tướng")
+	tienDoLable   = widget.NewLabel("Tiến độ: ")
+)
 
 type Champion struct {
 	ID   int    `json:"id"`
@@ -50,38 +61,38 @@ func GetStringChampName(champs []Champion) []string {
 
 func InitUI(championNames []string) {
 	myApp := app.New()
-	myWindow := myApp.NewWindow("Fyne SelectEntry Example")
+	myWindow := myApp.NewWindow("Pick-Lock tướng tự động siêu tốc vip pro")
 	myWindow.Resize(fyne.NewSize(400, 300))
 	myWindow.SetFixedSize(true)
-	tienDoLable := widget.NewLabel("Tiến độ: ")
 
-	startButton := widget.NewButton("Bắt đầu", func() {
-		if stopChan == nil {
-			stopChan = make(chan bool)
-			go StartPickLock()
-		}
-	})
+	selectEntry.SetOptions(championNames)
 
-	stopButton := widget.NewButton("Stop", func() {
-		if stopChan != nil {
-			stopChan <- true // Gửi thông báo để kết thúc goroutine (nếu đang chạy).
-			<-stopChan       // Đợi goroutine thực sự kết thúc.
-			stopChan = nil
+	startButton.Disable()
+	stopButton.Disable()
+	runningLable.SetText("Chưa bắt đầu")
 
-			runningLable.SetText("")
-		}
-	})
+	startButton.OnTapped = func() {
+		beeep.Alert("Cảnh báo", "Bắt đầu pick-lock", "pick-lock.ico")
 
-	startButton.Hidden = true
-	stopButton.Hidden = true
-	runningLable.Hidden = true
-	tienDoLable.Hidden = true
+		startButton.Disable()
+		stopButton.Enable()
+		confirmButton.Disable()
+		selectEntry.Disable()
 
-	// Tạo một SelectEntry với dữ liệu từ mảng tên champion
-	selectEntry := widget.NewSelectEntry(championNames)
+		stopChan = make(chan bool)
+		go StartPickLock(selectedChampion.ID)
+	}
 
-	// Tạo một label ban đầu với nội dung trống
-	resultLabel := widget.NewLabel("Chưa chọn champion")
+	stopButton.OnTapped = func() {
+		stopChan <- true // Gửi thông báo để kết thúc goroutine (nếu đang chạy).
+		<-stopChan       // Đợi goroutine thực sự kết thúc.
+
+		stopButton.Disable()
+		startButton.Enable()
+		confirmButton.Enable()
+		selectEntry.Enable()
+		runningLable.SetText("Chưa bắt đầu")
+	}
 
 	// Định nghĩa sự kiện khi người dùng chọn một champion
 	selectEntry.OnChanged = func(championName string) {
@@ -89,6 +100,10 @@ func InitUI(championNames []string) {
 			selectEntry.SetOptions(championNames)
 			selectedChampion.Name = ""
 			selectedChampion.ID = -1
+
+			resultLabel.SetText("Chưa chọn tướng")
+			startButton.Disable()
+			stopButton.Disable()
 			return
 		}
 
@@ -112,24 +127,17 @@ func InitUI(championNames []string) {
 	}
 
 	// Tạo một nút xác nhận
-	confirmButton := widget.NewButton("Xác nhận", func() {
+	confirmButton.OnTapped = func() {
 		if selectedChampion.ID == -1 || selectedChampion.Name == "" {
-			resultLabel.SetText("Chưa chọn champion")
-			startButton.Hidden = true
-			stopButton.Hidden = true
-			runningLable.Hidden = true
-			tienDoLable.Hidden = true
+			resultLabel.SetText("Chưa chọn tướng")
 			return
 		}
 
 		// Xử lý sự kiện tại đây, ví dụ: in ra thông tin của champion được chọn
-		resultText := fmt.Sprintf("Champion được chọn - ID: %d, Tên: %s", selectedChampion.ID, selectedChampion.Name)
+		resultText := fmt.Sprintf("Tướng được chọn - ID: %d, Tên: %s", selectedChampion.ID, selectedChampion.Name)
 		resultLabel.SetText(resultText)
-		startButton.Hidden = false
-		stopButton.Hidden = false
-		runningLable.Hidden = false
-		tienDoLable.Hidden = false
-	})
+		startButton.Enable()
+	}
 
 	// layout
 	selectChampBox := container.NewWithoutLayout(
@@ -145,7 +153,7 @@ func InitUI(championNames []string) {
 
 	// Đặt SelectEntry vào một containter để hiển thị
 	content := container.NewVBox(
-		widget.NewLabel("Chọn một champion:"),
+		widget.NewLabel("Chọn một tướng:"),
 		selectChampBox,
 		resultLabel,
 		startButton,
@@ -164,46 +172,51 @@ func InitUI(championNames []string) {
 	myWindow.ShowAndRun()
 }
 
-func StartPickLock() {
+func StartPickLock(championID int) {
 	defer func() {
+		stopButton.Disable()
+		startButton.Enable()
+		confirmButton.Enable()
+		selectEntry.Enable()
+
 		stopChan <- true // Gửi thông báo khi goroutine kết thúc.
 		close(stopChan)
 	}()
 
 	// Tạo một channel để định thời gian gọi hàm
 	tick := time.Tick(250 * time.Millisecond)
+	var done = false
 
-	// Vòng lặp vô hạn
 	c := 0
-	for {
-		c = c + 1
+	for !done {
+		c++
 		select {
 		case <-stopChan:
 			return // Kết thúc goroutine nếu nhận được thông báo từ channel.
 		case <-tick:
 
-			if !(CheckMatchFound() == true) {
+			if CheckMatchFound() == false {
 				// Tạo một chuỗi mới với số lượng dấu chấm "." dựa trên giá trị của c
 				dots := strings.Repeat(".", c)
-				runningLable.SetText("waiting" + dots)
-				//fmt.Printf("waiting%s", dots)
-				if c == 4 {
+				runningLable.SetText("Chờ tìm trận " + dots)
+				if c == 6 {
 					c = 0
 				}
 
 				continue
 			}
 
-			runningLable.SetText("MATCH FOUND!!")
+			runningLable.SetText("TÌM ĐƯỢC TRẬN !!")
 
 			AcceptMatch()
+
 			id := GetActionID()
 			if id > -1 {
 				sId := strconv.Itoa(id)
-				PickChampion(sId, strconv.Itoa(233))
+				PickChampion(sId, strconv.Itoa(championID))
 				LockChampion(sId)
-				runningLable.SetText("PICK-LOCK SUCCESS!, ENJOY YOUR GAME!!!")
-				break
+				runningLable.SetText("PICK-LOCK THÀNH CÔNG!")
+				done = true
 			}
 		}
 	}
@@ -239,10 +252,16 @@ func CallApi(api string, method string, data []byte) []byte {
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Println("Lỗi khi gửi yêu cầu HTTP:", err)
+		beeep.Alert("Cảnh báo", "Time out vì tìm trận quá lâu, vui lòng stop và chạy lại pick-lock", "pick-lock.ico") // Thay "icon.png" bằng đường dẫn đến hình ảnh icon bạn muốn sử dụng
 		return nil
 	}
 
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+
+		}
+	}(resp.Body)
 
 	if resp.StatusCode == 404 {
 		return nil
