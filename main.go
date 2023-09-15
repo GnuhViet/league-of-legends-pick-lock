@@ -5,13 +5,17 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/widget"
 	"io/ioutil"
 	"net/http"
-	"os"
 	"os/exec"
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,6 +23,11 @@ var username = "riot"
 var authToken string
 var appPort string
 var champs []Champion
+var selectedChampion Champion
+
+var stopChan chan bool
+
+var runningLable = widget.NewLabel("")
 
 type Champion struct {
 	ID   int    `json:"id"`
@@ -27,14 +36,139 @@ type Champion struct {
 
 func main() {
 	AssignAuthTokensAndAppPorts()
-	//champions := GetChampList()
-	//
-	//fmt.Println("Danh sách các champion:")
-	//for _, champion := range champions {
-	//	fmt.Printf("ID: %d, Name: %s\n", champion.ID, champion.Name)
-	//}
+	champs = GetChampList()
+	InitUI(GetStringChampName(champs))
+}
 
-	//champs := GetChampList()
+func GetStringChampName(champs []Champion) []string {
+	championNames := make([]string, len(champs))
+	for i, champ := range champs {
+		championNames[i] = champ.Name
+	}
+	return championNames
+}
+
+func InitUI(championNames []string) {
+	myApp := app.New()
+	myWindow := myApp.NewWindow("Fyne SelectEntry Example")
+	myWindow.Resize(fyne.NewSize(400, 300))
+	myWindow.SetFixedSize(true)
+	tienDoLable := widget.NewLabel("Tiến độ: ")
+
+	startButton := widget.NewButton("Bắt đầu", func() {
+		if stopChan == nil {
+			stopChan = make(chan bool)
+			go StartPickLock()
+		}
+	})
+
+	stopButton := widget.NewButton("Stop", func() {
+		if stopChan != nil {
+			stopChan <- true // Gửi thông báo để kết thúc goroutine (nếu đang chạy).
+			<-stopChan       // Đợi goroutine thực sự kết thúc.
+			stopChan = nil
+
+			runningLable.SetText("")
+		}
+	})
+
+	startButton.Hidden = true
+	stopButton.Hidden = true
+	runningLable.Hidden = true
+	tienDoLable.Hidden = true
+
+	// Tạo một SelectEntry với dữ liệu từ mảng tên champion
+	selectEntry := widget.NewSelectEntry(championNames)
+
+	// Tạo một label ban đầu với nội dung trống
+	resultLabel := widget.NewLabel("Chưa chọn champion")
+
+	// Định nghĩa sự kiện khi người dùng chọn một champion
+	selectEntry.OnChanged = func(championName string) {
+		if len(championName) == 0 {
+			selectEntry.SetOptions(championNames)
+			selectedChampion.Name = ""
+			selectedChampion.ID = -1
+			return
+		}
+
+		var champsSlice []string
+
+		for _, champs := range champs {
+			if strings.HasPrefix(strings.ToLower(champs.Name), strings.ToLower(championName)) {
+				champsSlice = append(champsSlice, champs.Name)
+			}
+		}
+
+		selectEntry.SetOptions(champsSlice)
+
+		// Tìm struct Champion tương ứng với tên champion được chọn
+		for _, champ := range champs {
+			if champ.Name == championName {
+				selectedChampion = champ
+				break
+			}
+		}
+	}
+
+	// Tạo một nút xác nhận
+	confirmButton := widget.NewButton("Xác nhận", func() {
+		if selectedChampion.ID == -1 || selectedChampion.Name == "" {
+			resultLabel.SetText("Chưa chọn champion")
+			startButton.Hidden = true
+			stopButton.Hidden = true
+			runningLable.Hidden = true
+			tienDoLable.Hidden = true
+			return
+		}
+
+		// Xử lý sự kiện tại đây, ví dụ: in ra thông tin của champion được chọn
+		resultText := fmt.Sprintf("Champion được chọn - ID: %d, Tên: %s", selectedChampion.ID, selectedChampion.Name)
+		resultLabel.SetText(resultText)
+		startButton.Hidden = false
+		stopButton.Hidden = false
+		runningLable.Hidden = false
+		tienDoLable.Hidden = false
+	})
+
+	// layout
+	selectChampBox := container.NewWithoutLayout(
+		selectEntry,
+		confirmButton,
+	)
+
+	selectEntry.Move(fyne.NewPos(20, 1))
+	selectEntry.Resize(fyne.NewSize(220, 36))
+
+	confirmButton.Move(fyne.NewPos(270, 1))
+	confirmButton.Resize(fyne.NewSize(80, 36))
+
+	// Đặt SelectEntry vào một containter để hiển thị
+	content := container.NewVBox(
+		widget.NewLabel("Chọn một champion:"),
+		selectChampBox,
+		resultLabel,
+		startButton,
+		stopButton,
+		widget.NewLabel(""),
+		container.NewHBox(
+			tienDoLable,
+			runningLable,
+		),
+	)
+
+	// Đặt nội dung vào cửa sổ
+	myWindow.SetContent(content)
+
+	// Hiển thị cửa sổ
+	myWindow.ShowAndRun()
+}
+
+func StartPickLock() {
+	defer func() {
+		stopChan <- true // Gửi thông báo khi goroutine kết thúc.
+		close(stopChan)
+	}()
 
 	// Tạo một channel để định thời gian gọi hàm
 	tick := time.Tick(250 * time.Millisecond)
@@ -44,21 +178,32 @@ func main() {
 	for {
 		c = c + 1
 		select {
+		case <-stopChan:
+			return // Kết thúc goroutine nếu nhận được thông báo từ channel.
 		case <-tick:
-			if CheckMatchFound() == true {
-				fmt.Println("MATCH FOUND!!")
-				AcceptMatch()
-				id := GetActionID()
-				if id > -1 {
-					sId := strconv.Itoa(id)
-					PickChampion(sId, strconv.Itoa(233))
-					LockChampion(sId)
 
-					os.Exit(0)
+			if !(CheckMatchFound() == true) {
+				// Tạo một chuỗi mới với số lượng dấu chấm "." dựa trên giá trị của c
+				dots := strings.Repeat(".", c)
+				runningLable.SetText("waiting" + dots)
+				//fmt.Printf("waiting%s", dots)
+				if c == 4 {
+					c = 0
 				}
 
-			} else {
-				fmt.Printf("waiting... %d", c)
+				continue
+			}
+
+			runningLable.SetText("MATCH FOUND!!")
+
+			AcceptMatch()
+			id := GetActionID()
+			if id > -1 {
+				sId := strconv.Itoa(id)
+				PickChampion(sId, strconv.Itoa(233))
+				LockChampion(sId)
+				runningLable.SetText("PICK-LOCK SUCCESS!, ENJOY YOUR GAME!!!")
+				break
 			}
 		}
 	}
