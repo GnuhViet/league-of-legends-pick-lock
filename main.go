@@ -31,6 +31,7 @@ var (
 	selectedChampion Champion
 	stopChan         chan bool
 	pickLocking      = false
+	spam             = true
 )
 
 var (
@@ -132,35 +133,10 @@ func InitUI(championNames []string) {
 	stopButton.Disable()
 	pickLockButton.Disable()
 
-	/*	startButton.OnTapped = func() {
-			beeep.Alert("Cảnh báo", "Bắt đầu pick-lock", "pick-lock.ico")
-
-			startButton.Disable()
-			stopButton.Enable()
-			confirmButton.Disable()
-			selectEntry.Disable()
-
-			stopChan = make(chan bool)
-			go StartAcceptMatchPickLock(selectedChampion.ID)
-		}
-
-		stopButton.OnTapped = func() {
-			stopChan <- true // Gửi thông báo để kết thúc goroutine (nếu đang chạy).
-			<-stopChan       // Đợi goroutine thực sự kết thúc.
-
-			stopButton.Disable()
-			startButton.Enable()
-			confirmButton.Enable()
-			selectEntry.Enable()
-			runningLabel.SetText("Chưa bắt đầu")
-		}*/
-
 	selectLanguage.OnChanged = func(vi string) {
 		uiText, alertText, messageText = utils.ReadEnv(selectLanguage.Selected)
 		ReloadUIText()
 	}
-
-	var spam = true
 
 	pickLockButton.OnTapped = func() {
 		if isInMatchMaking() == false {
@@ -233,7 +209,10 @@ func InitUI(championNames []string) {
 	confirmButton.OnTapped = func() {
 		if selectedChampion.ID == -1 || selectedChampion.Name == "" {
 			resultLabel.SetText(messageText.NotSelectChamp)
-			beeep.Alert(alertText.Notification, alertText.NotSelectChamp, "pick-lock.ico")
+			err := beeep.Alert(alertText.Notification, alertText.NotSelectChamp, "pick-lock.ico")
+			if err != nil {
+				return
+			}
 			return
 		}
 
@@ -328,6 +307,8 @@ func StartPickLock(championID int) {
 				matchAccepted = true
 			}
 
+			// isMatchAccepted will return false if someone not accept matchmaking
+			// then we stop the routine
 			if matchAccepted {
 				if !isMatchAccepted() {
 					runningLabel.SetText(messageText.MatchCancelled)
@@ -357,7 +338,7 @@ func StartPickLock(championID int) {
 }
 
 ////
-// --------------------------------------------- API ----------------------------------------
+// --------------------------------------------- LCU-API ----------------------------------------
 ////
 
 func CallApi(api string, method string, data []byte) []byte {
@@ -437,7 +418,7 @@ func isMatchAccepted() bool {
 	}
 
 	var data map[string]interface{}
-	err := json.Unmarshal([]byte(body), &data)
+	err := json.Unmarshal(body, &data)
 	if err != nil {
 		return false
 	}
