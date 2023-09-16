@@ -5,6 +5,8 @@ go 1.21.1
 require (
 	fyne.io/fyne/v2 v2.4.0
 	github.com/gen2brain/beeep v0.0.0-20230907135156-1a38885a97fc
+	github.com/joho/godotenv v1.5.1
+	gopkg.in/ini.v1 v1.67.0
 )
 
 require (

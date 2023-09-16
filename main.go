@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 	"github.com/gen2brain/beeep"
+	"hello/src/utils"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -29,18 +30,27 @@ var (
 	champs           []Champion
 	selectedChampion Champion
 	stopChan         chan bool
-	runningLabel     = widget.NewLabel("")
+	pickLocking      = false
 )
 
 var (
+	selectLanguage = widget.NewSelect([]string{"en", "vi"}, nil)
 	selectEntry    = widget.NewSelectEntry(nil)
-	confirmButton  = widget.NewButton("Xác nhận", nil)
-	startButton    = widget.NewButton("Bắt đầu", nil)
-	stopButton     = widget.NewButton("Stop", nil)
-	checkboxLock   = widget.NewCheck("Tự động khoá", nil)
-	pickLockButton = widget.NewButton("Chấp nhận trận đấu & instalock", nil)
-	resultLabel    = widget.NewLabel("Chưa chọn tướng")
-	statusLabel    = widget.NewLabel("Tiến độ: ")
+	confirmButton  = widget.NewButton("", nil)
+	startButton    = widget.NewButton("", nil)
+	stopButton     = widget.NewButton("", nil)
+	checkboxLock   = widget.NewCheck("", nil)
+	pickLockButton = widget.NewButton("", nil)
+	statusLabel    = widget.NewLabel("")
+	resultLabel    = widget.NewLabel("")
+	runningLabel   = widget.NewLabel("")
+)
+
+var (
+	uiText      utils.UIText
+	alertText   utils.AlertText
+	messageText utils.MessageText
+	appConfig   utils.Config
 )
 
 type Champion struct {
@@ -62,20 +72,54 @@ func GetStringChampName(champs []Champion) []string {
 	return championNames
 }
 
+func ChangeLanguage() {
+	confirmButton.SetText(uiText.ConfirmButtonText)
+	startButton.SetText(uiText.StartButtonText)
+	stopButton.SetText(uiText.StopButtonText)
+	checkboxLock.SetText(uiText.CheckboxLockText)
+	pickLockButton.SetText(uiText.PickLockButtonText)
+	statusLabel.SetText(uiText.StatusLabelText)
+
+	if selectedChampion.ID == -1 || selectedChampion.Name == "" {
+		resultLabel.SetText(uiText.ResultLabelText)
+	} else {
+		resultText := fmt.Sprintf(uiText.SelectedChampText+" "+selectedChampion.Name+"-- ID: %d", selectedChampion.ID)
+		resultLabel.SetText(resultText)
+	}
+
+	if pickLocking == true {
+		runningLabel.SetText(messageText.ReadyPickLock)
+	} else {
+		runningLabel.SetText(messageText.NotStarted)
+	}
+}
+
 func InitUI(championNames []string) {
+	appConfig = utils.ReadIniFile()
+	uiText, alertText, messageText = utils.ReadEnv(appConfig.Language)
+
 	myApp := app.New()
-	myWindow := myApp.NewWindow("Pick-Lock tướng tự động siêu tốc vip pro")
-	//myWindow.Resize(fyne.NewSize(400, 300))
+	myWindow := myApp.NewWindow(uiText.AppNameText)
 	myWindow.Resize(fyne.NewSize(400, 300))
 	myWindow.SetFixedSize(true)
 
+	confirmButton.SetText(uiText.ConfirmButtonText)
+	startButton.SetText(uiText.StartButtonText)
+	stopButton.SetText(uiText.StopButtonText)
+	checkboxLock.SetText(uiText.CheckboxLockText)
+	pickLockButton.SetText(uiText.PickLockButtonText)
+	resultLabel.SetText(uiText.ResultLabelText)
+	statusLabel.SetText(uiText.StatusLabelText)
+	runningLabel.SetText(messageText.NotStarted)
+	selectLanguage.Selected = appConfig.Language
+
 	selectEntry.SetOptions(championNames)
 
-	checkboxLock.Checked = true
+	checkboxLock.Checked = appConfig.AutoLock
+	checkboxLock.Refresh()
 	startButton.Disable()
 	stopButton.Disable()
 	pickLockButton.Disable()
-	runningLabel.SetText("Chưa bắt đầu")
 
 	/*	startButton.OnTapped = func() {
 			beeep.Alert("Cảnh báo", "Bắt đầu pick-lock", "pick-lock.ico")
@@ -100,10 +144,14 @@ func InitUI(championNames []string) {
 			runningLabel.SetText("Chưa bắt đầu")
 		}*/
 
-	//
+	selectLanguage.OnChanged = func(vi string) {
+		uiText, alertText, messageText = utils.ReadEnv(selectLanguage.Selected)
+		ChangeLanguage()
+	}
+
 	pickLockButton.OnTapped = func() {
 		if CheckMatchFound() == false {
-			beeep.Alert("Thông báo!", "Chưa tìm được trận đấu", "pick-lock.ico")
+			beeep.Alert(alertText.Notification, alertText.NotInMatchMaking, "pick-lock.ico")
 			return
 		}
 
@@ -117,24 +165,26 @@ func InitUI(championNames []string) {
 	}
 
 	stopButton.OnTapped = func() {
-		stopChan <- true // Gửi thông báo để kết thúc goroutine (nếu đang chạy).
-		<-stopChan       // Đợi goroutine thực sự kết thúc.
+		stopChan <- true // Send notification to end goroutine (if running).
+		<-stopChan       // Wait for the goroutine to actually finish.
 
 		stopButton.Disable()
 		pickLockButton.Enable()
 		confirmButton.Enable()
 		selectEntry.Enable()
-		runningLabel.SetText("Đã huỷ!")
+		runningLabel.SetText(messageText.PickLockCancel)
 	}
 
-	// Định nghĩa sự kiện khi người dùng chọn một champion
+	// select entry event
+	// if empty text then set option to all
+	// search and fill the option by input text
 	selectEntry.OnChanged = func(championName string) {
 		if len(championName) == 0 {
 			selectEntry.SetOptions(championNames)
 			selectedChampion.Name = ""
 			selectedChampion.ID = -1
 
-			resultLabel.SetText("Chưa chọn tướng")
+			resultLabel.SetText(messageText.NotSelectChamp)
 			startButton.Disable()
 			stopButton.Disable()
 			pickLockButton.Disable()
@@ -151,7 +201,7 @@ func InitUI(championNames []string) {
 
 		selectEntry.SetOptions(champsSlice)
 
-		// Tìm struct Champion tương ứng với tên champion được chọn
+		// search and fill the option by input text
 		for _, champ := range champs {
 			if champ.Name == championName {
 				selectedChampion = champ
@@ -160,22 +210,28 @@ func InitUI(championNames []string) {
 		}
 	}
 
-	// Nút xác nhận
 	confirmButton.OnTapped = func() {
 		if selectedChampion.ID == -1 || selectedChampion.Name == "" {
-			resultLabel.SetText("Chưa chọn tướng")
-			beeep.Alert("Thông báo", "Bạn chưa chọn tướng", "pick-lock.ico")
+			resultLabel.SetText(messageText.NotSelectChamp)
+			beeep.Alert(alertText.Notification, alertText.NotSelectChamp, "pick-lock.ico")
 			return
 		}
 
-		// Xử lý sự kiện tại đây, ví dụ: in ra thông tin của champion được chọn
-		resultText := fmt.Sprintf("Tướng được chọn - ID: %d, Tên: %s", selectedChampion.ID, selectedChampion.Name)
+		resultText := fmt.Sprintf(uiText.SelectedChampText+" "+selectedChampion.Name+" -- ID: %d", selectedChampion.ID)
 		resultLabel.SetText(resultText)
 		startButton.Enable()
 		pickLockButton.Enable()
 	}
 
-	// layout
+	//------------ layout----------
+	tileBox := container.NewWithoutLayout(
+		widget.NewLabel(uiText.SelectChampText),
+		selectLanguage,
+	)
+
+	selectLanguage.Move(fyne.NewPos(280, 8))
+	selectLanguage.Resize(fyne.NewSize(58, 20))
+
 	selectChampBox := container.NewWithoutLayout(
 		selectEntry,
 		confirmButton,
@@ -187,9 +243,8 @@ func InitUI(championNames []string) {
 	confirmButton.Move(fyne.NewPos(270, 1))
 	confirmButton.Resize(fyne.NewSize(80, 36))
 
-	// Đặt SelectEntry vào một containter để hiển thị
 	content := container.NewVBox(
-		widget.NewLabel("Chọn một tướng(nhập để tìm kiếm):"),
+		tileBox,
 		selectChampBox,
 		resultLabel,
 		//startButton,
@@ -202,10 +257,14 @@ func InitUI(championNames []string) {
 		),
 	)
 
-	// Đặt nội dung vào cửa sổ
-	myWindow.SetContent(content)
+	myWindow.SetMaster()
+	myWindow.SetOnClosed(func() {
+		appConfig.Language = selectLanguage.Selected
+		appConfig.AutoLock = checkboxLock.Checked
+		utils.WriteIniFile(appConfig)
+	})
 
-	// Hiển thị cửa sổ
+	myWindow.SetContent(content)
 	myWindow.ShowAndRun()
 }
 
@@ -260,29 +319,44 @@ func StartAcceptMatchPickLock(championID int) {
 }
 */
 
+// StartPickLock if not in matchmaking then stop the process
+// spam pick & lock request
+// defaut is 250ms polling rate
 func StartPickLock(championID int) {
 	defer func() {
 		stopButton.Disable()
 		startButton.Enable()
 		confirmButton.Enable()
+		pickLockButton.Enable()
 		selectEntry.Enable()
-		stopChan <- true // Gửi thông báo khi goroutine kết thúc.
+		stopChan <- true // Send notification when goroutine finishes.
+		pickLocking = false
+		fmt.Println("CALLED!!")
 		close(stopChan)
 	}()
 
-	// Tạo một channel để định thời gian gọi hàm
+	fmt.Println("START NEW")
+
+	// polling with 250ms time
 	tick := time.Tick(250 * time.Millisecond)
 	var done = false
+	pickLocking = true
 
 	c := 0
 	for !done {
 		c++
 		select {
 		case <-stopChan:
-			return // Kết thúc goroutine nếu nhận được thông báo từ channel.
+			return // End the goroutine if a tapped the stop button
 		case <-tick:
+			if CheckMatchFound() == false {
+				runningLabel.SetText(messageText.MatchCancelled)
+				done = true
+				break
+			}
+
 			dots := strings.Repeat(".", c)
-			runningLabel.SetText("đang chuẩn bị pick-lock" + dots)
+			runningLabel.SetText(messageText.ReadyPickLock + dots)
 			if c == 6 {
 				c = 0
 			}
@@ -296,7 +370,7 @@ func StartPickLock(championID int) {
 				if checkboxLock.Checked == true {
 					LockChampion(sId)
 				}
-				runningLabel.SetText("PICK-LOCK THÀNH CÔNG!")
+				runningLabel.SetText(messageText.PickLockSuccess)
 				done = true
 			}
 		}
@@ -308,10 +382,9 @@ func StartPickLock(championID int) {
 ////
 
 func CallApi(api string, method string, data []byte) []byte {
-	// Tạo URL dựa trên appPort
+
 	url := fmt.Sprintf("https://127.0.0.1:%s%s", appPort, api)
 
-	// Tạo yêu cầu HTTP
 	req, err := http.NewRequest(method, url, nil)
 
 	if method == "PATCH" {
@@ -324,11 +397,10 @@ func CallApi(api string, method string, data []byte) []byte {
 		return nil
 	}
 
-	// Đặt tên đăng nhập và mật khẩu
 	req.SetBasicAuth(username, authToken)
 	req.Header.Set("User-Agent", "My-User-Agent")
 
-	// Gửi yêu cầu HTTP
+	// disable dls check
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
@@ -336,8 +408,6 @@ func CallApi(api string, method string, data []byte) []byte {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		//fmt.Println("Lỗi khi gửi yêu cầu HTTP:", err)
-		//beeep.Alert("Cảnh báo", "Time out vì tìm trận quá lâu, vui lòng stop và chạy lại pick-lock", "pick-lock.ico") // Thay "icon.png" bằng đường dẫn đến hình ảnh icon bạn muốn sử dụng
 		return nil
 	}
 
@@ -352,10 +422,8 @@ func CallApi(api string, method string, data []byte) []byte {
 		return nil
 	}
 
-	// Đọc phản hồi từ máy chủ
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		//fmt.Println("Lỗi khi đọc phản hồi từ máy chủ:", err)
 		return nil
 	}
 
@@ -389,7 +457,7 @@ func CheckMatchFound() bool {
 		return false
 	}
 
-	var data map[string]interface{} // Sử dụng map[string]interface{} để giải mã JSON
+	var data map[string]interface{}
 	err := json.Unmarshal(body, &data)
 	if err != nil {
 		return false
@@ -415,53 +483,44 @@ func GetActionID() int {
 		return -1
 	}
 
-	// Truy cập giá trị của trường "localPlayerCellId"
 	localPlayerCellID, ok := sessionData["localPlayerCellId"].(float64)
 	if !ok {
 		return -1
 	}
 
-	// Lặp qua danh sách "actions" trong sessionData
 	actions, ok := sessionData["actions"].([]interface{})
 	if !ok {
 		return -1
 	}
 
 	for _, action := range actions {
-		// Chuyển đổi action thành danh sách các action bên trong
 		actionList, ok := action.([]interface{})
 		if !ok {
 			continue
 		}
 
-		// Lặp qua danh sách action bên trong
 		for _, subAction := range actionList {
 			actionData, ok := subAction.(map[string]interface{})
 			if !ok {
 				continue
 			}
 
-			// Lấy giá trị "actorCellId" từ actionData
 			actorCellID, ok := actionData["actorCellId"].(float64)
 			if !ok {
 				continue
 			}
 
-			// Kiểm tra nếu actorCellId trùng với localPlayerCellID
 			if actorCellID == localPlayerCellID {
-				// Lấy giá trị "id" tương ứng
 				id, ok := actionData["id"].(float64)
 				if !ok {
 					return -1
 				}
 
-				// Trả về giá trị "id" tương ứng
 				return int(id)
 			}
 		}
 	}
 
-	// Trả về -1 nếu không tìm thấy
 	return -1
 }
 
@@ -470,7 +529,6 @@ func AcceptMatch() {
 }
 
 func PickChampion(actionId string, championID string) {
-	// Tạo dữ liệu JSON để gửi lên server
 	data := map[string]string{"championId": championID}
 	jsonData, _ := json.Marshal(data)
 
@@ -482,13 +540,10 @@ func LockChampion(actionId string) {
 }
 
 func AssignAuthTokensAndAppPorts() {
-	// Lệnh bạn muốn thực thi (ví dụ: "ipconfig /all")
 	command := "WMIC PROCESS WHERE name='LeagueClientUx.exe' GET commandline"
 
-	// Tạo một cửa sổ cmd.exe và chạy lệnh
 	cmd := exec.Command("cmd", "/C", command)
 
-	// Thực thi lệnh và nhận kết quả đầu ra
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		//fmt.Println("Lỗi:", err)
@@ -496,24 +551,21 @@ func AssignAuthTokensAndAppPorts() {
 	}
 
 	inputString := string(output)
-	// Tạo biểu thức chính quy để tìm chuỗi "--remoting-auth-token=" và "--app-port="
 	reAuthToken := regexp.MustCompile(`"--remoting-auth-token=([^"]+)"`)
 	reAppPort := regexp.MustCompile(`"--app-port=([^"]+)"`)
 
-	// Tìm chuỗi "--remoting-auth-token="
 	authTokens := reAuthToken.FindAllStringSubmatch(inputString, -1)
 
-	// Tìm chuỗi "--app-port="
 	appPorts := reAppPort.FindAllStringSubmatch(inputString, -1)
 
 	if !(len(authTokens) > 0 && len(appPorts) > 0) {
-		err := beeep.Alert("Thông báo!", "Vui lòng khởi động client trước và đợi 2-5s", "pick-lock.ico")
+		err := beeep.Alert("CLIENT NOT FOUND!!!", "Please run the game first", "pick-lock.ico")
 		if err != nil {
 			return
 		}
 		os.Exit(0)
 	}
 
-	authToken = authTokens[0][1] // Lấy giá trị từ nhóm con [1] của kết quả
-	appPort = appPorts[0][1]     // Lấy giá trị từ nhóm con [1] của kết quả
+	authToken = authTokens[0][1]
+	appPort = appPorts[0][1]
 }
