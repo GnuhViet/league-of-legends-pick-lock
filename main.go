@@ -155,7 +155,7 @@ func InitUI(championNames []string) {
 	var spam = true
 
 	pickLockButton.OnTapped = func() {
-		if CheckMatchFound() == false {
+		if ReadyCheck() == false {
 			if spam {
 				spam = !spam
 				runningLabel.SetText(messageText.NotFoundMatch)
@@ -303,7 +303,7 @@ func StartAcceptMatchPickLock(championID int) {
 			return // Kết thúc goroutine nếu nhận được thông báo từ channel.
 		case <-tick:
 
-			if CheckMatchFound() == false {
+			if ReadyCheck() == false {
 				// Tạo một chuỗi mới với số lượng dấu chấm "." dựa trên giá trị của c
 				dots := strings.Repeat(".", c)
 				runningLabel.SetText("Chờ tìm trận " + dots)
@@ -363,7 +363,8 @@ func StartPickLock(championID int) {
 		case <-stopChan:
 			return // End the goroutine if a tapped the stop button
 		case <-tick:
-			if CheckMatchFound() == false {
+
+			if ReadyCheck() == false {
 				runningLabel.SetText(messageText.MatchCancelled)
 				done = true
 				break
@@ -462,7 +463,11 @@ func GetChampList() []Champion {
 	return champions
 }
 
-func CheckMatchFound() bool {
+// ReadyCheck
+// only true when player accept the match
+// false if another player refuse matchmaking
+// false when matchmaking not started
+func ReadyCheck() bool {
 	body := CallApi("/lol-matchmaking/v1/ready-check", "GET", nil)
 
 	if body == nil {
