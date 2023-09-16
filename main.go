@@ -44,6 +44,7 @@ var (
 	statusLabel    = widget.NewLabel("")
 	resultLabel    = widget.NewLabel("")
 	runningLabel   = widget.NewLabel("")
+	titleLabel     = widget.NewLabel("")
 )
 
 var (
@@ -73,6 +74,7 @@ func GetStringChampName(champs []Champion) []string {
 }
 
 func ChangeLanguage() {
+	titleLabel.SetText(uiText.SelectChampText)
 	confirmButton.SetText(uiText.ConfirmButtonText)
 	startButton.SetText(uiText.StartButtonText)
 	stopButton.SetText(uiText.StopButtonText)
@@ -103,6 +105,7 @@ func InitUI(championNames []string) {
 	myWindow.Resize(fyne.NewSize(400, 300))
 	myWindow.SetFixedSize(true)
 
+	titleLabel.SetText(uiText.SelectChampText)
 	confirmButton.SetText(uiText.ConfirmButtonText)
 	startButton.SetText(uiText.StartButtonText)
 	stopButton.SetText(uiText.StopButtonText)
@@ -225,7 +228,7 @@ func InitUI(championNames []string) {
 
 	//------------ layout----------
 	tileBox := container.NewWithoutLayout(
-		widget.NewLabel(uiText.SelectChampText),
+		titleLabel,
 		selectLanguage,
 	)
 
