@@ -4,4 +4,4 @@ Instalock your favorite champion at the speed of light
 
 ![image](https://github.com/GnuhViet/auto-pick-lock/assets/34486659/e64c2f06-0340-4588-8c11-d6536856678e)
 
-[Releas]([[https://github.com/your-username/your-repo/releases/tag/v1.0.0](https://github.com/GnuhViet/auto-pick-lock/releases/tag/auto-pick-lock)](https://github.com/GnuhViet/auto-pick-lock/releases/tag/auto-pick-lock))
+[Releas](https://github.com/GnuhViet/auto-pick-lock/releases/tag/auto-pick-lock)
