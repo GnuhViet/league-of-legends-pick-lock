@@ -152,9 +152,18 @@ func InitUI(championNames []string) {
 		ChangeLanguage()
 	}
 
+	var spam = true
+
 	pickLockButton.OnTapped = func() {
 		if CheckMatchFound() == false {
-			beeep.Alert(alertText.Notification, alertText.NotInMatchMaking, "pick-lock.ico")
+			if spam {
+				spam = !spam
+				runningLabel.SetText(messageText.NotFoundMatch)
+			} else {
+				spam = !spam
+				runningLabel.SetText(messageText.PleaseWait)
+			}
+			//fmt.Println("button not accepted")
 			return
 		}
 
@@ -327,18 +336,20 @@ func StartAcceptMatchPickLock(championID int) {
 // defaut is 250ms polling rate
 func StartPickLock(championID int) {
 	defer func() {
+		//fmt.Println("stopping goroutine")
+		pickLocking = false
 		stopButton.Disable()
 		startButton.Enable()
 		confirmButton.Enable()
 		pickLockButton.Enable()
 		selectEntry.Enable()
+
+		// do any cleanup/logic above this line!!!
 		stopChan <- true // Send notification when goroutine finishes.
-		pickLocking = false
-		fmt.Println("CALLED!!")
 		close(stopChan)
 	}()
 
-	fmt.Println("START NEW")
+	AcceptMatch()
 
 	// polling with 250ms time
 	tick := time.Tick(250 * time.Millisecond)
@@ -363,8 +374,6 @@ func StartPickLock(championID int) {
 			if c == 6 {
 				c = 0
 			}
-
-			AcceptMatch()
 
 			id := GetActionID()
 			if id > -1 {

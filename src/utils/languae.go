@@ -29,6 +29,8 @@ type AlertText struct {
 type MessageText struct {
 	NotStarted      string
 	PickLockCancel  string
+	PleaseWait      string
+	NotFoundMatch   string
 	NotSelectChamp  string
 	MatchCancelled  string
 	ReadyPickLock   string
@@ -72,10 +74,12 @@ func ReadEnv(language string) (UIText, AlertText, MessageText) {
 
 	messageText.NotStarted = os.Getenv("NotStarted")
 	messageText.PickLockCancel = os.Getenv("PickLockCancel")
+	messageText.NotFoundMatch = os.Getenv("NotFoundMatch")
 	messageText.NotSelectChamp = os.Getenv("NotSelectChampMess")
 	messageText.MatchCancelled = os.Getenv("MatchCancelled")
 	messageText.ReadyPickLock = os.Getenv("ReadyPickLock")
 	messageText.PickLockSuccess = os.Getenv("PickLockSuccess")
+	messageText.PleaseWait = os.Getenv("PleaseWait")
 
 	os.Clearenv()
 	return uiText, alertText, messageText
