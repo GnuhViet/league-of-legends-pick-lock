@@ -59,6 +59,10 @@ type Champion struct {
 	Name string `json:"name"`
 }
 
+////////////
+// -------------------------------------------- main -------------------------------------
+///////////
+
 func main() {
 	AssignAuthTokensAndAppPorts()
 	champs = GetChampList()
@@ -73,7 +77,11 @@ func GetStringChampName(champs []Champion) []string {
 	return championNames
 }
 
-func ChangeLanguage() {
+/////////////
+// --------------------------------------------- ui --------------------------------------
+///////////
+
+func ReloadUIText() {
 	titleLabel.SetText(uiText.SelectChampText)
 	confirmButton.SetText(uiText.ConfirmButtonText)
 	startButton.SetText(uiText.StartButtonText)
@@ -149,13 +157,13 @@ func InitUI(championNames []string) {
 
 	selectLanguage.OnChanged = func(vi string) {
 		uiText, alertText, messageText = utils.ReadEnv(selectLanguage.Selected)
-		ChangeLanguage()
+		ReloadUIText()
 	}
 
 	var spam = true
 
 	pickLockButton.OnTapped = func() {
-		if ReadyCheck() == false {
+		if isInMatchMaking() == false {
 			if spam {
 				spam = !spam
 				runningLabel.SetText(messageText.NotFoundMatch)
@@ -280,60 +288,11 @@ func InitUI(championNames []string) {
 	myWindow.ShowAndRun()
 }
 
-/*
-func StartAcceptMatchPickLock(championID int) {
-	defer func() {
-		stopButton.Disable()
-		startButton.Enable()
-		confirmButton.Enable()
-		selectEntry.Enable()
-		stopChan <- true // Gửi thông báo khi goroutine kết thúc.
-		close(stopChan)
-	}()
-
-	// Tạo một channel để định thời gian gọi hàm
-	tick := time.Tick(250 * time.Millisecond)
-	var done = false
-
-	c := 0
-	for !done {
-		c++
-		select {
-		case <-stopChan:
-			return // Kết thúc goroutine nếu nhận được thông báo từ channel.
-		case <-tick:
-
-			if ReadyCheck() == false {
-				// Tạo một chuỗi mới với số lượng dấu chấm "." dựa trên giá trị của c
-				dots := strings.Repeat(".", c)
-				runningLabel.SetText("Chờ tìm trận " + dots)
-				if c == 6 {
-					c = 0
-				}
-
-				continue
-			}
-
-			runningLabel.SetText("TÌM ĐƯỢC TRẬN !!")
-
-			AcceptMatch()
-
-			id := GetActionID()
-			if id > -1 {
-				sId := strconv.Itoa(id)
-				PickChampion(sId, strconv.Itoa(championID))
-				LockChampion(sId)
-				runningLabel.SetText("PICK-LOCK THÀNH CÔNG!")
-				done = true
-			}
-		}
-	}
-}
-*/
+// ------------------------------------ pick lock logic --------------------------
 
 // StartPickLock if not in matchmaking then stop the process
 // spam pick & lock request
-// defaut is 250ms polling rate
+// default is 250ms polling rate
 func StartPickLock(championID int) {
 	defer func() {
 		//fmt.Println("stopping goroutine")
@@ -356,6 +315,8 @@ func StartPickLock(championID int) {
 	var done = false
 	pickLocking = true
 
+	var matchAccepted = false
+
 	c := 0
 	for !done {
 		c++
@@ -363,11 +324,16 @@ func StartPickLock(championID int) {
 		case <-stopChan:
 			return // End the goroutine if a tapped the stop button
 		case <-tick:
+			if isMatchAccepted() {
+				matchAccepted = true
+			}
 
-			if ReadyCheck() == false {
-				runningLabel.SetText(messageText.MatchCancelled)
-				done = true
-				break
+			if matchAccepted {
+				if !isMatchAccepted() {
+					runningLabel.SetText(messageText.MatchCancelled)
+					done = true
+					break
+				}
 			}
 
 			dots := strings.Repeat(".", c)
@@ -391,7 +357,7 @@ func StartPickLock(championID int) {
 }
 
 ////
-// API CALLING
+// --------------------------------------------- API ----------------------------------------
 ////
 
 func CallApi(api string, method string, data []byte) []byte {
@@ -463,11 +429,37 @@ func GetChampList() []Champion {
 	return champions
 }
 
-// ReadyCheck
-// only true when player accept the match
-// false if another player refuse matchmaking
-// false when matchmaking not started
-func ReadyCheck() bool {
+func isMatchAccepted() bool {
+	body := CallApi("/lol-matchmaking/v1/search", "GET", nil)
+
+	if body == nil {
+		return false
+	}
+
+	var data map[string]interface{}
+	err := json.Unmarshal([]byte(body), &data)
+	if err != nil {
+		return false
+	}
+
+	readyCheck, ok := data["readyCheck"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+
+	fmt.Println(readyCheck)
+
+	playerResponse, ok := readyCheck["playerResponse"].(string)
+	if !ok {
+		return false
+	}
+
+	fmt.Println(playerResponse)
+
+	return playerResponse == "Accepted"
+}
+
+func isInMatchMaking() bool {
 	body := CallApi("/lol-matchmaking/v1/ready-check", "GET", nil)
 
 	if body == nil {
