@@ -1,7 +1,9 @@
 # Auto-pick-lock
 
 Instalock your favorite champion at the speed of light
+Languae: English, Vietnamese
+-------
 
-![image](https://github.com/GnuhViet/auto-pick-lock/assets/34486659/e64c2f06-0340-4588-8c11-d6536856678e)
+![image](https://github.com/GnuhViet/auto-pick-lock/assets/34486659/80fc1d31-ee1b-4466-8eb6-ef26034c4233)
 
 [Dowload](https://github.com/GnuhViet/auto-pick-lock/releases/tag/auto-pick-lock)
