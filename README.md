@@ -1,4 +1,4 @@
-# Auto-pick-lock
+# League of legends pick-lock/instalock
 
 Instalock your favorite champion at the speed of light <br/>
 --------
