@@ -1,4 +1,4 @@
-# auto-pick-lock
+# Auto-pick-lock
 
 Instalock your favorite champion at the speed of light
 
